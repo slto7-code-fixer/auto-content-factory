@@ -16,31 +16,27 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: 3.10  # استخدم نسخة حديثة
+        python-version: 3.10  # << غيرنا من 3.1 إلى 3.10
         check-latest: false
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        # لو ما عندكش requirements.txt، استخدم التالي:
+        # إذا ما عندكش requirements.txt:
         # pip install moviepy gTTS pydub
 
     - name: Generate Voice
-      run: |
-        python agents/voice_agent.py
+      run: python agents/voice_agent.py
 
     - name: Generate Video
-      run: |
-        python agents/video_agent.py
+      run: python agents/video_agent.py
 
-    - name: Generate Text / Script
-      run: |
-        python agents/script_agent.py
+    - name: Generate Script / Text
+      run: python agents/script_agent.py
 
     - name: Compile & Publish
-      run: |
-        python main.py
+      run: python main.py
 
     - name: Complete job
       run: echo "All steps completed successfully!"
