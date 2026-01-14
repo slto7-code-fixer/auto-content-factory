@@ -1,22 +1,43 @@
-from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
-import os, random
+import traceback
 
-# اختيار الصور
-image_folder = "images"
-images = os.listdir(image_folder)
-if len(images) < 1:
-    raise Exception("لا توجد صور في المجلد!")
+try:
+    # كل كودك هنا
+    from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
+    import os, random
 
-selected_images = random.sample(images, min(3, len(images)))
-clips = [ImageClip(os.path.join(image_folder, img)).set_duration(5) for img in selected_images]
+    print("📌 Starting video generation...")
 
-video = concatenate_videoclips(clips, method="compose")
+    # اختيار الصور
+    image_folder = "images"
+    if not os.path.exists(image_folder):
+        raise Exception(f"Folder '{image_folder}' not found!")
 
-# إضافة الصوت
-audio_path = "voice.mp3"
-if os.path.exists(audio_path):
-    audio = AudioFileClip(audio_path)
-    video = video.set_audio(audio)
+    images = os.listdir(image_folder)
+    if len(images) < 1:
+        raise Exception("No images found in the folder!")
 
-# تصدير الفيديو
-video.write_videofile("final_video.mp4", fps=24)
+    print(f"Found {len(images)} images, selecting...")
+
+    selected_images = random.sample(images, min(3, len(images)))
+    clips = [ImageClip(os.path.join(image_folder, img)).set_duration(5) for img in selected_images]
+
+    video = concatenate_videoclips(clips, method="compose")
+
+    # إضافة الصوت
+    audio_path = "voice.mp3"
+    if os.path.exists(audio_path):
+        print("Voice found, adding to video...")
+        audio = AudioFileClip(audio_path)
+        video = video.set_audio(audio)
+    else:
+        print("⚠️ Voice not found, skipping audio.")
+
+    # تصدير الفيديو
+    output_file = "final_video.mp4"
+    video.write_videofile(output_file, fps=24)
+    print(f"✅ Video created: {output_file}")
+
+except Exception as e:
+    print("❌ ERROR occurred:")
+    traceback.print_exc()
+    raise
