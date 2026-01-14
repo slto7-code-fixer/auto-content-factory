@@ -13,11 +13,11 @@ on:
 jobs:
   generate_content:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # لمنع التوقف اللانهائي
+    timeout-minutes: 30
 
     steps:
     - name: Checkout repository with submodules
-      uses: actions/checkout@v4  # تحديث للإصدار v4
+      uses: actions/checkout@v4
       with:
         submodules: recursive
         fetch-depth: 0
@@ -25,19 +25,21 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'  # إصدار LTS مدعوم
-        cache: 'pip'  # تفعيل التخزين المؤقت
+        python-version: '3.10'
+        cache: 'pip'
         cache-dependency-path: |
           requirements.txt
           pyproject.toml
           setup.py
 
-    - name: Install system dependencies (if needed)
+    - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg imagemagick ghostscript
-        # للتحقق من صحة ImageMagick إذا كان مطلوبًا
-        sudo sed -i 's/<policy domain="coder" rights="none" pattern="PDF" \/>/<policy domain="coder" rights="read|write" pattern="PDF" \/>/g' /etc/ImageMagick-6/policy.xml || true
+        sudo apt-get install -y ffmpeg imagemagick ghostscript libsm6 libxext6
+        # حل مشكلة ImageMagick policy
+        if [ -f /etc/ImageMagick-6/policy.xml ]; then
+          sudo sed -i 's/<policy domain="coder" rights="none" pattern="PDF" \/>/<policy domain="coder" rights="read|write" pattern="PDF" \/>/g' /etc/ImageMagick-6/policy.xml
+        fi
 
     - name: Install Python dependencies
       run: |
@@ -45,75 +47,100 @@ jobs:
         if [ -f requirements.txt ]; then
           pip install -r requirements.txt
         else
-          # الاعتمادات الأساسية المتوقعة
+          # تثبيت الاعتمادات الأساسية إذا لم يكن هناك requirements.txt
           pip install moviepy>=1.0.3 gTTS>=2.3.2 pydub>=0.25.1 openai>=1.6.1 pillow>=10.0.0 requests>=2.31.0
-        fi
-        # لتثبيت التبعيات الاختيارية إذا لزم الأمر
-        pip install pyyaml>=6.0 python-dotenv>=1.0.0
-
-    - name: Setup environment variables
-      run: |
-        # إنشاء ملف .env إذا لم يكن موجودًا
-        if [ ! -f .env ]; then
-          cp .env.example .env 2>/dev/null || echo "No .env.example found, skipping"
-        fi
-        # تعيين متغيرات افتراضية للاختبار
-        if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-          echo "WARNING: OPENAI_API_KEY not set in secrets"
+          pip install pyyaml>=6.0 python-dotenv>=1.0.0 numpy>=1.24.0
         fi
 
-    - name: Lint and validate code
+    - name: Setup environment
       run: |
-        # التحقق من صحة بناء الكود
-        python -m py_compile agents/*.py 2>/dev/null || true
-        python -m py_compile main.py 2>/dev/null || true
-        # إذا كان لديك flake8 أو black
-        pip install flake8 black --quiet 2>/dev/null || true
-        flake8 agents/ main.py --max-line-length=120 --ignore=E501,W503 2>/dev/null || true
-
-    - name: Create output directories
-      run: |
+        # إنشاء هيكل المجلدات
         mkdir -p output/videos output/audio output/text logs
-        echo "Output directories created"
+        
+        # نسخ ملف .env إذا كان موجودًا كنموذج
+        if [ -f .env.example ] && [ ! -f .env ]; then
+          cp .env.example .env
+          echo "Copied .env.example to .env"
+        fi
 
-    - name: Generate content (with error handling)
-      continue-on-error: false
+    - name: Validate environment
+      run: |
+        echo "Python version: $(python --version)"
+        echo "Pip version: $(pip --version)"
+        echo "FFmpeg version: $(ffmpeg -version 2>/dev/null | head -n1 || echo 'FFmpeg not found')"
+        
+        # التحقق من ملفات Python الأساسية
+        if [ ! -f "agents/script_agent.py" ]; then
+          echo "ERROR: script_agent.py not found!"
+          exit 1
+        fi
+        if [ ! -f "agents/voice_agent.py" ]; then
+          echo "ERROR: voice_agent.py not found!"
+          exit 1
+        fi
+        if [ ! -f "agents/video_agent.py" ]; then
+          echo "ERROR: video_agent.py not found!"
+          exit 1
+        fi
+        if [ ! -f "main.py" ]; then
+          echo "ERROR: main.py not found!"
+          exit 1
+        fi
+
+    - name: Generate content
       env:
         CONTENT_TOPIC: ${{ github.event.inputs.content_topic || 'technology' }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-        PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
+        ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY || '' }}
+        PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY || '' }}
       run: |
-        set -e  # التوقف عند أول خطأ
+        set -e  # التوقف عند أي خطأ
         
-        # تسجيل وقت البدء
-        echo "Job started at: $(date)" > logs/run_$(date +%Y%m%d_%H%M%S).log
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        LOG_FILE="logs/run_${TIMESTAMP}.log"
         
-        # توليد المحتوى بتسلسل محدد
-        echo "=== Generating Script ==="
-        python agents/script_agent.py "$CONTENT_TOPIC" 2>&1 | tee -a logs/script.log
+        echo "=== Auto Content Factory ===" | tee -a "$LOG_FILE"
+        echo "Run ID: ${{ github.run_id }}" | tee -a "$LOG_FILE"
+        echo "Topic: $CONTENT_TOPIC" | tee -a "$LOG_FILE"
+        echo "Start time: $(date)" | tee -a "$LOG_FILE"
         
-        echo "=== Generating Voice ==="
-        python agents/voice_agent.py 2>&1 | tee -a logs/voice.log
+        # تشغيل الوكلاء بتسلسل مع معالجة الأخطاء
+        echo "Step 1/4: Generating script..." | tee -a "$LOG_FILE"
+        python agents/script_agent.py "$CONTENT_TOPIC" 2>&1 | tee -a logs/script_${TIMESTAMP}.log
         
-        echo "=== Generating Video ==="
-        python agents/video_agent.py 2>&1 | tee -a logs/video.log
+        echo "Step 2/4: Generating voice..." | tee -a "$LOG_FILE"
+        python agents/voice_agent.py 2>&1 | tee -a logs/voice_${TIMESTAMP}.log
         
-        echo "=== Compiling Final Content ==="
-        python main.py 2>&1 | tee -a logs/main.log
+        echo "Step 3/4: Generating video..." | tee -a "$LOG_FILE"
+        python agents/video_agent.py 2>&1 | tee -a logs/video_${TIMESTAMP}.log
         
-        # التحقق من الملفات المخرجة
+        echo "Step 4/4: Compiling final content..." | tee -a "$LOG_FILE"
+        python main.py 2>&1 | tee -a logs/main_${TIMESTAMP}.log
+        
+        echo "End time: $(date)" | tee -a "$LOG_FILE"
+        
+        # التحقق من المخرجات
+        echo "=== Output Verification ===" | tee -a "$LOG_FILE"
         if [ -f "output/final_video.mp4" ]; then
-          echo "SUCCESS: Final video generated: output/final_video.mp4"
-          ls -lh output/final_video.mp4
+          FILESIZE=$(stat -c%s "output/final_video.mp4" 2>/dev/null || stat -f%z "output/final_video.mp4")
+          echo "✓ Final video: output/final_video.mp4 (${FILESIZE} bytes)" | tee -a "$LOG_FILE"
         else
-          echo "WARNING: Final video not found in expected location"
-          find output/ -name "*.mp4" -o -name "*.avi" -o -name "*.mov" | head -5
+          # البحث عن أي فيديو تم إنشاؤه
+          VIDEO_FILES=$(find output/ -name "*.mp4" -o -name "*.avi" -o -name "*.mov" 2>/dev/null | head -5)
+          if [ -n "$VIDEO_FILES" ]; then
+            echo "✓ Found video files:" | tee -a "$LOG_FILE"
+            echo "$VIDEO_FILES" | tee -a "$LOG_FILE"
+          else
+            echo "✗ No video files found in output/" | tee -a "$LOG_FILE"
+          fi
         fi
+        
+        echo "=== Summary ===" | tee -a "$LOG_FILE"
+        echo "Content generation completed!" | tee -a "$LOG_FILE"
 
     - name: Upload artifacts
-      if: always()  # رفع المخرجات حتى في حالة الفشل
-      uses: actions/upload-artifact@v3
+      if: always()
+      uses: actions/upload-artifact@v4  # تم التحديث من v3 إلى v4
       with:
         name: generated-content-${{ github.run_id }}
         path: |
@@ -121,33 +148,34 @@ jobs:
           logs/
         retention-days: 7
 
-    - name: Upload to releases (optional)
+    - name: Create GitHub Release (Optional)
       if: success() && github.event_name == 'workflow_dispatch'
       uses: softprops/action-gh-release@v1
+      continue-on-error: true  # لا تفشل العملية إذا فشلت هذه الخطوة
       with:
         files: output/final_video.mp4
         tag_name: content-${{ github.run_id }}
-        name: Generated Content ${{ github.run_number }}
+        name: "Generated Content #${{ github.run_number }}"
         body: |
-          Auto-generated content created on ${{ github.event.head_commit.timestamp }}
+          Auto-generated content
           
-          Topic: ${{ github.event.inputs.content_topic || 'technology' }}
+          **Topic:** ${{ github.event.inputs.content_topic || 'technology' }}
+          **Run ID:** ${{ github.run_id }}
+          **Created:** ${{ github.event.head_commit.timestamp }}
           
-          Run ID: ${{ github.run_id }}
+          [View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
         draft: false
         prerelease: false
 
-    - name: Notify success
+    - name: Success notification
       if: success()
       run: |
-        echo "🎉 Content generation completed successfully!"
-        echo "Run ID: ${{ github.run_id }}"
-        echo "Artifacts available for download"
+        echo "✅ Content generation completed successfully!"
+        echo "📊 View artifacts: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-    - name: Notify failure
+    - name: Failure notification
       if: failure()
       run: |
         echo "❌ Content generation failed!"
-        echo "Check the logs for details"
-        echo "Run ID: ${{ github.run_id }}"
+        echo "🔍 Check logs for details: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         exit 1
