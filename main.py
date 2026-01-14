@@ -8,4 +8,4 @@ script = generate_script(idea)
 voice = generate_voice(script)
 video = generate_video(script, voice)
 
-print("PIPELINE OK")
+print("VOICE GENERATED")
