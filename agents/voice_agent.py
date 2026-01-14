@@ -1,4 +1,12 @@
+import subprocess
+
 def generate_voice(text):
-    with open("voice.txt", "w", encoding="utf-8") as f:
-        f.write(text)
-    return "voice.txt"
+    output = "voice.wav"
+    subprocess.run([
+        "espeak",
+        "-v", "ar",
+        "-s", "140",
+        "-w", output,
+        text
+    ])
+    return output
