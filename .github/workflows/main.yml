@@ -3,11 +3,10 @@ name: Auto Content Factory
 on:
   push:
     branches: [ main ]
-  schedule:
-    - cron: '0 8 * * *'
+  workflow_dispatch:
 
 jobs:
-  generate_video:
+  generate_content:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,12 +16,31 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: 3.10
+        python-version: 3.10  # استخدم نسخة حديثة
+        check-latest: false
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        # لو ما عندكش requirements.txt، استخدم التالي:
+        # pip install moviepy gTTS pydub
+
+    - name: Generate Voice
+      run: |
+        python agents/voice_agent.py
 
     - name: Generate Video
-      run: python main.py
+      run: |
+        python agents/video_agent.py
+
+    - name: Generate Text / Script
+      run: |
+        python agents/script_agent.py
+
+    - name: Compile & Publish
+      run: |
+        python main.py
+
+    - name: Complete job
+      run: echo "All steps completed successfully!"
