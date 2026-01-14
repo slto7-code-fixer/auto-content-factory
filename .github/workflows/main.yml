@@ -2,27 +2,25 @@ name: Auto Content Factory
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [ main ]
+  schedule:
+    - cron: '0 8 * * *'  # كل يوم الساعة 8 صباحاً UTC (تقدر تغيّر الوقت)
 
 jobs:
-  generate_voice:
+  generate_video:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.10
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install gTTS moviepy numpy pillow
+    - name: Install dependencies
+      run: pip install -r requirements.txt
 
-      - name: Run Main
-        run: python main.py
+    - name: Generate Video
+      run: python main.py
